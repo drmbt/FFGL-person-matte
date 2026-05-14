@@ -1,55 +1,55 @@
-This is the Resolume fork of the FFGL repository. It is up to date and has Visual Studio and Xcode projects to compile 64 bit plugins that can be loaded by Resolume 7.0.3 and up.  
+# FFGL Person Matte
 
-**Note for macOS developers:** *Resolume 7.11.0 has added native ARM support. This means that on Apple Sillicon it will run as a native ARM process. Native ARM processes cannot load x86_64 based plugins. To enable your plugin to be loaded you should build it as universal build. If your Xcode is up-to-date enough you can choose to build for "Any Mac (Apple Silicon, Intel)" instead of "My Mac" in the top left corner. Please read the [apple developer documentation](https://developer.apple.com/documentation/apple-silicon/building-a-universal-macos-binary) for more information about universal builds.*
+Resolume FFGL effect plugin that uses Apple's Vision framework to generate a person segmentation matte from the input clip. The matte can be previewed, softened, inverted, and applied as alpha so people can be isolated from the background inside Resolume.
 
-The master branch is used for continued development. It will contain the latest features, fixes and bugs. Plugins compiled with the master branch will work in Resolume 7.3.1 and up.
-If you do not want to be affected by the latest bugs you can use one of the stable releases. eg FFGL 2.2, which is the most recent released version of the sdk. Plugin development for Resolume 7.0.0/7.0.1/7.0.2 is no longer supported by this repository. These versions are very old and there are many newer versions that users can update to.
+This project is based on the Resolume FFGL SDK and adds the `ApplePersonSegmentation` plugin under `source/plugins/ApplePersonSegmentation`.
 
-You can find some help to get started with FFGL plugin development on the [wiki](https://github.com/resolume/ffgl/wiki).
+## Requirements
 
-Also more examples are available on this [repo](https://github.com/flyingrub/ffgl/tree/more/).
+- macOS 12 or newer for `VNGeneratePersonSegmentationRequest`
+- Apple Silicon or Intel Mac supported by your Resolume build
+- Resolume 7.3.1 or newer
+- Xcode command line tools
+- CMake 3.15 or newer
 
-## Master branch changes since FFGL 2.2
-- Replaced glload by glew, enabling OpenGL 4.6 extensions to be used inside plugins. Plugins may need to add deps/glew.props to their project's property pages for them to link to the binary.
-- Implemented parameter display names. Parameter names are used as identification during serialization, display names can be used to override the name that is shown in the ui. The display name can also be changed dynamically by raising a display name changed event. (Requires Resolume 7.4.0 and up)
-- Implemented value change events. Plugins can change their own parameter values and make the host pick up the change. See the new Events example on how to do this. (Requires Resolume 7.4.0 and up)
-- Implemented dynamic option elements. Plugins can add/remove/rename option elements on the fly. (Requires Resolume 7.4.1 and up)
+For Apple Silicon Resolume builds, use an arm64 or universal plugin build. An x86_64-only plugin will not load in native Apple Silicon Resolume.
 
-*You can suggest a change by creating an issue. In the issue describe the problem that has to be solved and if you want, a suggestion on how it could be solved.*
+## Build
 
-## Quickstart
+```sh
+cmake -S . -B build/cmake -DFFGL_BUILD_EXAMPLE_PLUGINS=ON
+cmake --build build/cmake --target ApplePersonSegmentation --config Release
+```
 
-Below are the first steps you need to create and test an FFGL plugin for Resolume. This assumes you have experience with git and C++ development.
+The built plugin bundle is written to:
 
-### Mac
+```text
+build/cmake/source/plugins/ApplePersonSegmentation/ApplePersonSegmentation.bundle
+```
 
-- Go to `<repo>/build/osx`, open `FFGLPlugins.xcodeproj`
-- Create a compilation target for your plugin:
-	- Select the Xcode project (top of the tree)
-	- Duplicate a target and rename it
-	- Remove the old plugin-specific files under Build Phases > Compile Sources (e.g. if you duplicated Gradients, remove `FFGLGradients.cpp`)
-	- Duplicating a target in Xcode creates and assigns a new `xx copy-Info.plist` file, but we don't want that. Go to Build Settings > Packaging > Info.plist and change the file name to `FFGLPlugin-Info.plist`.  
-	- Find the reference to the newly created `xx copy-Info.plist` file in the Xcode Project Navigator (probably all the way down the panel) and remove it there. When asked, choose Move to Trash.
-- In Finder, duplicate a plugin folder and rename the files. Choose a corresponding plugin type, e.g. copy `AddSubtract` if you want to build an Effect plugin or `Gradients` if you want to build a Source plugin.
-- Drag the new folder into the Xcode project. You will be asked to which target you want to add them, add them to your new target.
-- Go to the target's Build Phases again and make sure there are no resources under the Copy Bundle Resources phase.
-- Replace the class names to match your new plugin name and rename the elements in the PluginInfo struct
-- Fix up the Build scheme:
-	- When duplicating a target, a Build Scheme was also created. Next to the play and stop buttons, click the schemes dropdown and select Manage Schemes. 
-	- Rename the scheme that was auto-created (e.g. "Gradient copy")
-	- Select it in the scheme drop down.
-- Press play (Cmd+B) to compile.
-- Copy the resulting `.bundle` file from `<repo>/binaries/debug` to `~/Documents/Resolume/Extra Effects` and start Arena to test it.
+## Install
 
-### Windows 
+Copy the bundle to Resolume's extra effects folder:
 
-This assumes you use Visual Studio 2017
+```sh
+cp -R build/cmake/source/plugins/ApplePersonSegmentation/ApplePersonSegmentation.bundle ~/Documents/Resolume/Extra\ Effects/
+```
 
-- Go to `<repo>/build/windows`, duplicate a `.vcxproj` and the corresponding `.vcxproj.filters` file, and rename them.
-- Open `FFGLPlugins.sln`. Then right-click the Solution in the solution explorer (top of the tree), and choose Add > Existing Project and select the new file.
-- Remove the original `.cpp` and `.h` source files from the newly added project, i.e. if you duplicated `Gradient.vcxproj`, remove `FFGLGradients.h` and `FFGLGradients.cpp`
-- In Explorer, go to `<repo>/source/`, duplicate a plugin folder and rename the files. Choose a corresponding plugin type, i.e. copy `AddSubtract` if you want to build an Effect plugin or `Gradients` if you want to build a Source plugin.
-- Add the new source files to the project by dragging them into Visual Studio, onto your new project.
-- If you want to start the build with Visual Studio's Build command (F5), right-click the project and select Set as Startup Project. Altenatively, you can right-click the project and select Build.
-- After building, find the resulting `.dll` file in `\binaries\x64\Debug`. Copy it to `<user folder>/Documents/Resolume/Extra Effects`
+Restart Resolume after copying the bundle. The effect should appear as `Apple Person Segmentation`.
+
+## Parameters
+
+- `Threshold`: cutoff for the Vision matte.
+- `Softness`: edge smoothing around the threshold.
+- `Opacity`: strength of the matte applied to output alpha.
+- `Invert Mask`: keeps the background instead of the person.
+- `Show Mask`: outputs the processed grayscale matte for tuning.
+- `Quality`: maps low, mid, and high values to Vision's fast, balanced, and accurate quality levels.
+- `Output Mode`: `Premult Alpha` follows FFGL's premultiplied-alpha convention, while `Straight Alpha` keeps RGB unmultiplied and writes the matte to alpha for host paths that otherwise show black fill.
+
+## Notes
+
+The current implementation prioritizes proving the Vision-to-FFGL path. It reads the Resolume OpenGL texture back to CPU and runs Vision synchronously each frame, which is expensive. Future optimization work should move toward asynchronous processing, lower-resolution inference, frame skipping, and GPU-friendly texture transfer.
+
+On macOS versions without Vision person segmentation support, the plugin passes the input through unchanged.
 
