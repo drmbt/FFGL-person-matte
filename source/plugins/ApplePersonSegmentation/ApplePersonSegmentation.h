@@ -38,6 +38,8 @@ private:
 
 	float threshold;
 	float softness;
+	float shrinkGrow;
+	float feather;
 	float opacity;
 	float invertMask;
 	float showMask;

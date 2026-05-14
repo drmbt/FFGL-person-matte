@@ -21,6 +21,8 @@ Copy the bundle to `~/Documents/Resolume/Extra Effects` and restart Resolume.
 
 - `Threshold`: cutoff for the Vision matte.
 - `Softness`: edge smoothing around the threshold.
+- `Shrink / Grow`: normalized mask size control. `0.5` is neutral, lower values shrink the person matte, and higher values grow it.
+- `Feather`: smooths the processed matte edge after shrink/grow.
 - `Opacity`: strength of the matte applied to output alpha.
 - `Invert Mask`: keeps the background instead of the person.
 - `Show Mask`: outputs the raw processed matte for tuning.

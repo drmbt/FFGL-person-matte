@@ -41,10 +41,10 @@ private:
 
 	float contrast;
 	float lineWidth;
+	float hue;
+	float saturation;
+	float brightness;
+	float alpha;
 	float opacity;
-	float darkOnLight;
-	float invertMask;
-	float showMask;
-	float blendMode;
-	float maxDimension;
+	float compOverInput;
 };

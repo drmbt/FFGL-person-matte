@@ -16,6 +16,8 @@ enum ParamType : FFUInt32
 {
 	PT_THRESHOLD,
 	PT_SOFTNESS,
+	PT_SHRINK_GROW,
+	PT_FEATHER,
 	PT_OPACITY,
 	PT_INVERT,
 	PT_SHOW_MASK,
@@ -58,16 +60,99 @@ uniform sampler2D InputTexture;
 uniform sampler2D MaskTexture;
 uniform float Threshold;
 uniform float Softness;
+uniform float ShrinkGrow;
+uniform float Feather;
 uniform float Opacity;
 uniform float InvertMask;
 uniform float ShowMask;
 uniform int OutputMode;
 uniform int HasMask;
+uniform vec2 MaskSize;
 
 in vec2 uv;
 in vec2 maskUV;
 
 out vec4 fragColor;
+
+float sampleMask( vec2 coord )
+{
+	return texture( MaskTexture, clamp( coord, vec2( 0.0 ), vec2( 1.0 ) ) ).r;
+}
+
+void accumulateMorphSample( inout float result, vec2 coord, vec2 offset, float radius, vec2 texel, float amount )
+{
+	float sampled = sampleMask( coord + offset * texel * radius );
+	result = amount > 0.0 ? max( result, sampled ) : min( result, sampled );
+}
+
+float morphMask( vec2 coord )
+{
+	float amount = clamp( ShrinkGrow * 2.0 - 1.0, -1.0, 1.0 );
+	float radius = amount > 0.0 ? amount * 32.0 : -amount * 18.0;
+	float result = sampleMask( coord );
+
+	if( radius < 0.001 )
+		return result;
+
+	vec2 texel = 1.0 / max( MaskSize, vec2( 1.0 ) );
+	accumulateMorphSample( result, coord, vec2( 1.0, 0.0 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( -1.0, 0.0 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.0, 1.0 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.0, -1.0 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.7071, 0.7071 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( -0.7071, 0.7071 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.7071, -0.7071 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( -0.7071, -0.7071 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.5, 0.0 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( -0.5, 0.0 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.0, 0.5 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.0, -0.5 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.3536, 0.3536 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( -0.3536, 0.3536 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( 0.3536, -0.3536 ), radius, texel, amount );
+	accumulateMorphSample( result, coord, vec2( -0.3536, -0.3536 ), radius, texel, amount );
+
+	return result;
+}
+
+void accumulateFeatherSample( inout float mask, inout float weight, vec2 coord, vec2 offset, float radius, vec2 texel, float sampleWeight )
+{
+	mask += morphMask( coord + offset * texel * radius ) * sampleWeight;
+	weight += sampleWeight;
+}
+
+float featherMask( vec2 coord )
+{
+	float radius = clamp( Feather, 0.0, 1.0 ) * 24.0;
+	float center = morphMask( coord );
+
+	if( radius < 0.001 )
+		return center;
+
+	vec2 texel = 1.0 / max( MaskSize, vec2( 1.0 ) );
+	float mask = center * 4.0;
+	float weight = 4.0;
+
+	accumulateFeatherSample( mask, weight, coord, vec2( 1.0, 0.0 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( -1.0, 0.0 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.0, 1.0 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.0, -1.0 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.7071, 0.7071 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( -0.7071, 0.7071 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.7071, -0.7071 ), radius * 0.5, texel, 2.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( -0.7071, -0.7071 ), radius * 0.5, texel, 2.0 );
+
+	accumulateFeatherSample( mask, weight, coord, vec2( 1.0, 0.0 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( -1.0, 0.0 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.0, 1.0 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.0, -1.0 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.7071, 0.7071 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( -0.7071, 0.7071 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( 0.7071, -0.7071 ), radius, texel, 1.0 );
+	accumulateFeatherSample( mask, weight, coord, vec2( -0.7071, -0.7071 ), radius, texel, 1.0 );
+
+	return mask / weight;
+}
 
 void main()
 {
@@ -79,7 +164,7 @@ void main()
 		return;
 	}
 
-	float mask = texture( MaskTexture, maskUV ).r;
+	float mask = featherMask( maskUV );
 	mask = mix( mask, 1.0 - mask, step( 0.5, InvertMask ) );
 
 	float soft = max( Softness, 0.001 );
@@ -116,6 +201,8 @@ ApplePersonSegmentation::ApplePersonSegmentation() :
 	loggedVisionUnavailable( false ),
 	threshold( 0.5f ),
 	softness( 0.1f ),
+	shrinkGrow( 0.5f ),
+	feather( 0.0f ),
 	opacity( 1.0f ),
 	invertMask( 0.0f ),
 	showMask( 0.0f ),
@@ -127,6 +214,8 @@ ApplePersonSegmentation::ApplePersonSegmentation() :
 
 	SetParamInfof( PT_THRESHOLD, "Threshold", FF_TYPE_STANDARD );
 	SetParamInfof( PT_SOFTNESS, "Softness", FF_TYPE_STANDARD );
+	SetParamInfof( PT_SHRINK_GROW, "Shrink / Grow", FF_TYPE_STANDARD );
+	SetParamInfof( PT_FEATHER, "Feather", FF_TYPE_STANDARD );
 	SetParamInfof( PT_OPACITY, "Opacity", FF_TYPE_STANDARD );
 	SetParamInfo( PT_INVERT, "Invert Mask", FF_TYPE_BOOLEAN, false );
 	SetParamInfo( PT_SHOW_MASK, "Show Mask", FF_TYPE_BOOLEAN, false );
@@ -194,11 +283,14 @@ FFResult ApplePersonSegmentation::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 
 	shader.Set( "Threshold", threshold );
 	shader.Set( "Softness", softness );
+	shader.Set( "ShrinkGrow", shrinkGrow );
+	shader.Set( "Feather", feather );
 	shader.Set( "Opacity", opacity );
 	shader.Set( "InvertMask", invertMask );
 	shader.Set( "ShowMask", showMask );
 	shader.Set( "OutputMode", static_cast< int >( outputMode + 0.5f ) );
 	shader.Set( "HasMask", hasMask ? 1 : 0 );
+	shader.Set( "MaskSize", static_cast< float >( maskWidth ), static_cast< float >( maskHeight ) );
 
 	quad.Draw();
 
@@ -222,6 +314,12 @@ FFResult ApplePersonSegmentation::SetFloatParameter( unsigned int dwIndex, float
 		break;
 	case PT_SOFTNESS:
 		softness = value;
+		break;
+	case PT_SHRINK_GROW:
+		shrinkGrow = std::max( 0.0f, std::min( value, 1.0f ) );
+		break;
+	case PT_FEATHER:
+		feather = std::max( 0.0f, std::min( value, 1.0f ) );
 		break;
 	case PT_OPACITY:
 		opacity = value;
@@ -253,6 +351,10 @@ float ApplePersonSegmentation::GetFloatParameter( unsigned int index )
 		return threshold;
 	case PT_SOFTNESS:
 		return softness;
+	case PT_SHRINK_GROW:
+		return shrinkGrow;
+	case PT_FEATHER:
+		return feather;
 	case PT_OPACITY:
 		return opacity;
 	case PT_INVERT:

@@ -18,12 +18,12 @@ enum ParamType : FFUInt32
 {
 	PT_CONTRAST,
 	PT_LINE_WIDTH,
+	PT_HUE,
+	PT_SATURATION,
+	PT_BRIGHTNESS,
+	PT_ALPHA,
 	PT_OPACITY,
-	PT_DARK_ON_LIGHT,
-	PT_INVERT_MASK,
-	PT_SHOW_MASK,
-	PT_BLEND_MODE,
-	PT_MAX_DIMENSION
+	PT_COMP_OVER_INPUT
 };
 
 static CFFGLPluginInfo PluginInfo(
@@ -59,10 +59,9 @@ void main()
 static const char fragmentShaderCode[] = R"(#version 410 core
 uniform sampler2D InputTexture;
 uniform sampler2D ContourTexture;
+uniform vec4 LightColor;
 uniform float Opacity;
-uniform float InvertMask;
-uniform float ShowMask;
-uniform int BlendMode;
+uniform float CompOverInput;
 uniform int HasContours;
 
 in vec2 uv;
@@ -70,39 +69,34 @@ in vec2 contourUV;
 
 out vec4 fragColor;
 
+vec3 hsbToRgb( vec3 c )
+{
+	vec3 rgb = clamp( abs( mod( c.x * 6.0 + vec3( 0.0, 4.0, 2.0 ), 6.0 ) - 3.0 ) - 1.0, 0.0, 1.0 );
+	rgb = rgb * rgb * ( 3.0 - 2.0 * rgb );
+	return c.z * mix( vec3( 1.0 ), rgb, c.y );
+}
+
 void main()
 {
 	vec4 color = texture( InputTexture, uv );
 
 	if( HasContours == 0 )
 	{
-		fragColor = color;
+		fragColor = CompOverInput >= 0.5 ? color : vec4( 0.0 );
 		return;
 	}
 
 	float contour = texture( ContourTexture, contourUV ).r;
-	contour = mix( contour, 1.0 - contour, step( 0.5, InvertMask ) );
-	contour = clamp( contour * Opacity, 0.0, 1.0 );
+	contour = clamp( contour * LightColor.a * Opacity, 0.0, 1.0 );
+	vec3 lightColor = hsbToRgb( LightColor.rgb );
 
-	if( ShowMask >= 0.5 )
+	if( CompOverInput >= 0.5 )
 	{
-		fragColor = vec4( vec3( contour ), 1.0 );
+		fragColor = vec4( min( color.rgb + lightColor * contour, vec3( 1.0 ) ), max( color.a, contour ) );
 		return;
 	}
 
-	if( BlendMode == 1 )
-	{
-		fragColor = vec4( mix( color.rgb, vec3( 1.0 ) - color.rgb, contour ), color.a );
-		return;
-	}
-
-	if( BlendMode == 2 )
-	{
-		fragColor = vec4( color.rgb, color.a * contour );
-		return;
-	}
-
-	fragColor = vec4( min( color.rgb + vec3( contour ), vec3( 1.0 ) ), color.a );
+	fragColor = vec4( lightColor * contour, contour );
 }
 )";
 
@@ -116,27 +110,24 @@ AppleContourDetection::AppleContourDetection() :
 	loggedVisionUnavailable( false ),
 	contrast( 0.604701f ),
 	lineWidth( 0.297084f ),
+	hue( 0.0f ),
+	saturation( 0.0f ),
+	brightness( 1.0f ),
+	alpha( 1.0f ),
 	opacity( 1.0f ),
-	darkOnLight( 0.0f ),
-	invertMask( 0.0f ),
-	showMask( 1.0f ),
-	blendMode( 0.0f ),
-	maxDimension( 0.5f )
+	compOverInput( 0.0f )
 {
 	SetMinInputs( 1 );
 	SetMaxInputs( 1 );
 
 	SetParamInfof( PT_CONTRAST, "Contrast", FF_TYPE_STANDARD );
 	SetParamInfof( PT_LINE_WIDTH, "Line Width", FF_TYPE_STANDARD );
+	SetParamInfof( PT_HUE, "Hue 1", FF_TYPE_HUE );
+	SetParamInfof( PT_SATURATION, "Saturation 1", FF_TYPE_SATURATION );
+	SetParamInfof( PT_BRIGHTNESS, "Brightness 1", FF_TYPE_BRIGHTNESS );
+	SetParamInfof( PT_ALPHA, "Alpha 1", FF_TYPE_ALPHA );
 	SetParamInfof( PT_OPACITY, "Opacity", FF_TYPE_STANDARD );
-	SetParamInfo( PT_DARK_ON_LIGHT, "Dark Lines", FF_TYPE_BOOLEAN, false );
-	SetParamInfo( PT_INVERT_MASK, "Invert Mask", FF_TYPE_BOOLEAN, false );
-	SetParamInfo( PT_SHOW_MASK, "Show Mask", FF_TYPE_BOOLEAN, true );
-	SetOptionParamInfo( PT_BLEND_MODE, "Blend Mode", 3, blendMode );
-	SetParamElementInfo( PT_BLEND_MODE, 0, "Add White", 0.0f );
-	SetParamElementInfo( PT_BLEND_MODE, 1, "Invert", 1.0f );
-	SetParamElementInfo( PT_BLEND_MODE, 2, "Alpha Mask", 2.0f );
-	SetParamInfof( PT_MAX_DIMENSION, "Detail", FF_TYPE_STANDARD );
+	SetParamInfo( PT_COMP_OVER_INPUT, "Comp Over Input", FF_TYPE_BOOLEAN, false );
 
 	FFGLLog::LogToHost( "Created Apple Contour Detection effect" );
 }
@@ -195,10 +186,9 @@ FFResult AppleContourDetection::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	Scoped2DTextureBinding contourBinding( contourTexture );
 	shader.Set( "ContourTexture", 1 );
 
+	shader.Set( "LightColor", hue, saturation, brightness, alpha );
 	shader.Set( "Opacity", opacity );
-	shader.Set( "InvertMask", invertMask );
-	shader.Set( "ShowMask", showMask );
-	shader.Set( "BlendMode", static_cast< int >( blendMode + 0.5f ) );
+	shader.Set( "CompOverInput", compOverInput );
 	shader.Set( "HasContours", hasContours ? 1 : 0 );
 
 	quad.Draw();
@@ -224,23 +214,23 @@ FFResult AppleContourDetection::SetFloatParameter( unsigned int dwIndex, float v
 	case PT_LINE_WIDTH:
 		lineWidth = value;
 		break;
+	case PT_HUE:
+		hue = value;
+		break;
+	case PT_SATURATION:
+		saturation = value;
+		break;
+	case PT_BRIGHTNESS:
+		brightness = value;
+		break;
+	case PT_ALPHA:
+		alpha = value;
+		break;
 	case PT_OPACITY:
 		opacity = value;
 		break;
-	case PT_DARK_ON_LIGHT:
-		darkOnLight = value >= 0.5f ? 1.0f : 0.0f;
-		break;
-	case PT_INVERT_MASK:
-		invertMask = value >= 0.5f ? 1.0f : 0.0f;
-		break;
-	case PT_SHOW_MASK:
-		showMask = value >= 0.5f ? 1.0f : 0.0f;
-		break;
-	case PT_BLEND_MODE:
-		blendMode = std::min( 2.0f, std::max( 0.0f, std::floor( value + 0.5f ) ) );
-		break;
-	case PT_MAX_DIMENSION:
-		maxDimension = value;
+	case PT_COMP_OVER_INPUT:
+		compOverInput = value >= 0.5f ? 1.0f : 0.0f;
 		break;
 	default:
 		return FF_FAIL;
@@ -257,18 +247,18 @@ float AppleContourDetection::GetFloatParameter( unsigned int index )
 		return contrast;
 	case PT_LINE_WIDTH:
 		return lineWidth;
+	case PT_HUE:
+		return hue;
+	case PT_SATURATION:
+		return saturation;
+	case PT_BRIGHTNESS:
+		return brightness;
+	case PT_ALPHA:
+		return alpha;
 	case PT_OPACITY:
 		return opacity;
-	case PT_DARK_ON_LIGHT:
-		return darkOnLight;
-	case PT_INVERT_MASK:
-		return invertMask;
-	case PT_SHOW_MASK:
-		return showMask;
-	case PT_BLEND_MODE:
-		return blendMode;
-	case PT_MAX_DIMENSION:
-		return maxDimension;
+	case PT_COMP_OVER_INPUT:
+		return compOverInput;
 	}
 
 	return 0.0f;
@@ -372,8 +362,8 @@ bool AppleContourDetection::GenerateContourMask( const FFGLTextureStruct& inputT
 		{
 			VNDetectContoursRequest* request = [[VNDetectContoursRequest alloc] init];
 			request.contrastAdjustment = contrast;
-			request.detectsDarkOnLight = darkOnLight >= 0.5f;
-			request.maximumImageDimension = static_cast< NSUInteger >( 256 + std::floor( maxDimension * 1792.0f ) );
+			request.detectsDarkOnLight = false;
+			request.maximumImageDimension = 1152;
 
 			NSError* error = nil;
 			VNImageRequestHandler* handler = [[VNImageRequestHandler alloc] initWithCVPixelBuffer:sourceBuffer options:@{}];

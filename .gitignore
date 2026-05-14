@@ -1,5 +1,6 @@
 /binaries/
 /build/cmake/
+/build/models/
 /build/osx/build/
 .DS_Store
 
