@@ -1,8 +1,11 @@
-# FFGL Person Matte
+# Apple Vision FFGL Effects
 
-Resolume FFGL effect plugin that uses Apple's Vision framework to generate a person segmentation matte from the input clip. The matte can be previewed, softened, inverted, and applied as alpha so people can be isolated from the background inside Resolume.
+Resolume FFGL effect plugins that use Apple's Vision framework to generate realtime analysis layers from the input clip.
 
-This project is based on the Resolume FFGL SDK and adds the `ApplePersonSegmentation` plugin under `source/plugins/ApplePersonSegmentation`.
+This project is based on the Resolume FFGL SDK and adds:
+
+- `ApplePersonSegmentation`: person segmentation matte generation.
+- `AppleContourDetection`: contour line mask generation.
 
 ## Requirements
 
@@ -19,12 +22,14 @@ For Apple Silicon Resolume builds, use an arm64 or universal plugin build. An x8
 ```sh
 cmake -S . -B build/cmake -DFFGL_BUILD_EXAMPLE_PLUGINS=ON
 cmake --build build/cmake --target ApplePersonSegmentation --config Release
+cmake --build build/cmake --target AppleContourDetection --config Release
 ```
 
 The built plugin bundle is written to:
 
 ```text
 build/cmake/source/plugins/ApplePersonSegmentation/ApplePersonSegmentation.bundle
+build/cmake/source/plugins/AppleContourDetection/AppleContourDetection.bundle
 ```
 
 ## Install
@@ -33,11 +38,12 @@ Copy the bundle to Resolume's extra effects folder:
 
 ```sh
 cp -R build/cmake/source/plugins/ApplePersonSegmentation/ApplePersonSegmentation.bundle ~/Documents/Resolume/Extra\ Effects/
+cp -R build/cmake/source/plugins/AppleContourDetection/AppleContourDetection.bundle ~/Documents/Resolume/Extra\ Effects/
 ```
 
-Restart Resolume after copying the bundle. The effect should appear as `Apple Person Segmentation`.
+Restart Resolume after copying the bundles. The effects should appear as `Apple Person Segmentation` and `Apple Contour Detection`.
 
-## Parameters
+## Apple Person Segmentation Parameters
 
 - `Threshold`: cutoff for the Vision matte.
 - `Softness`: edge smoothing around the threshold.
@@ -46,6 +52,17 @@ Restart Resolume after copying the bundle. The effect should appear as `Apple Pe
 - `Show Mask`: outputs the processed grayscale matte for tuning.
 - `Quality`: maps low, mid, and high values to Vision's fast, balanced, and accurate quality levels.
 - `Output Mode`: `Premult Alpha` follows FFGL's premultiplied-alpha convention, while `Straight Alpha` keeps RGB unmultiplied and writes the matte to alpha for host paths that otherwise show black fill.
+
+## Apple Contour Detection Parameters
+
+- `Contrast`: Vision contour contrast adjustment. Defaults to `0.604701`.
+- `Line Width`: CPU rasterized contour thickness. Defaults to `0.297084`.
+- `Opacity`: contour compositing strength. Defaults to `1.0`.
+- `Dark Lines`: detects dark lines on light backgrounds. Defaults to off.
+- `Invert Mask`: inverts the contour mask before compositing. Defaults to off.
+- `Show Mask`: outputs the grayscale contour mask for tuning. Defaults to on.
+- `Blend Mode`: add white lines, invert along contours, or output contour alpha. Defaults to `Add White`.
+- `Detail`: maximum image dimension used by Vision contour detection. Defaults to `0.5`.
 
 ## Notes
 
